@@ -1,0 +1,265 @@
+---
+- name: 配置用户和安装软件
+  hosts: all
+  become: true
+  # gather_facts: true
+
+  vars:
+    username: myuser
+    user_password: "1234"
+    proxy_env:
+      http_proxy: "socks5h://127.0.0.1:1080"
+      https_proxy: "socks5h://127.0.0.1:1080"
+      all_proxy: "socks5h://127.0.0.1:1080"
+
+  environment: "{{ proxy_env }}"
+
+  tasks:
+    # - name: 显示所有 ansible_facts
+    #   ansible.builtin.debug:
+    #     var: ansible_facts
+
+    - name: 检查反向隧道是否已存在
+      delegate_to: localhost
+      become: false
+      ansible.builtin.shell: pgrep -f "ssh.*-R 1080:127.0.0.1:22119.*{{ inventory_hostname }}"
+      register: ssh_tunnel_check
+      changed_when: false
+      failed_when:
+        - ssh_tunnel_check.rc != 0
+        - ssh_tunnel_check.rc != 1
+
+    - name: 建立反向隧道（后台运行）
+      delegate_to: localhost
+      become: false
+      ansible.builtin.shell: |
+        ssh -f -N -R 1080:127.0.0.1:22119 {{ ansible_user }}@{{ inventory_hostname }} \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            -o ServerAliveInterval=60 \
+            -o ServerAliveCountMax=3
+      args:
+        executable: /bin/bash
+      async: 30
+      poll: 0
+      register: ssh_tunnel_job
+      when: ssh_tunnel_check.rc != 0
+      changed_when: ssh_tunnel_job.rc == 0
+      failed_when: ssh_tunnel_job.rc != 0
+
+    - name: 等待隧道建立
+      ansible.builtin.pause:
+        seconds: 3
+
+    - name: 测试网络连接
+      environment: "{{ proxy_env }}"
+      block:
+        - name: 测试代理连接
+          ansible.builtin.uri:
+            url: "https://www.google.com"
+            status_code: 200
+
+    - name: 安装基础软件
+      ansible.builtin.package:
+        name:
+          - sudo
+          - wget
+          - curl
+          - git
+          - fish
+          - tmux
+          - neovim
+          - ranger
+          - htop
+          - neofetch
+        state: present
+
+    - name: 创建用户
+      ansible.builtin.user:
+        name: "{{ username }}"
+        shell: /bin/bash
+        password: "{{ user_password | password_hash('sha512') }}"
+        create_home: true
+        state: present
+
+    - name: 检查是否已存在 exec fish 配置
+      ansible.builtin.shell: grep -q "exec fish" /home/{{ username }}/.bashrc && echo "exists" || echo "not"
+      register: fish_check
+      changed_when: false
+      ignore_errors: true
+
+    - name: 在 .bashrc 中添加自动启动 fish 的配置
+      ansible.builtin.blockinfile:
+        path: /home/{{ username }}/.bashrc
+        block: |
+          if [[ $(ps --no-header --pid=$PPID --format=comm) != "fish" && -z ${BASH_EXECUTION_STRING} && ${SHLVL} == 1 ]]
+          then
+            shopt -q login_shell && LOGIN_OPTION='--login' || LOGIN_OPTION=''
+            exec fish $LOGIN_OPTION
+          fi
+        marker: "# {mark} ANSIBLE MANAGED BLOCK - fish auto start"
+      when: "'exists' not in fish_check.stdout"
+
+    - name: 为 Debian 系用户添加 sudo 组
+      ansible.builtin.user:
+        name: "{{ username }}"
+        groups: sudo
+        append: true
+      when: ansible_os_family == "Debian"
+
+    - name: 为 RHEL 系用户添加 wheel 组
+      ansible.builtin.user:
+        name: "{{ username }}"
+        groups: wheel
+        append: true
+      when: ansible_os_family == "RedHat"
+
+    - name: 创建 /srv/apps 目录
+      ansible.builtin.file:
+        path: /srv/apps
+        state: directory
+        owner: "{{ username }}"
+        group: "{{ 'wheel' if ansible_os_family == 'RedHat' else 'sudo' }}"
+        mode: "2770"
+        setype: default_t
+      when: ansible_os_family == "RedHat"
+
+    # ubuntu 上默认是 Apparmor
+    - name: 创建 /srv/apps 目录 (非 SELinux 系统)
+      ansible.builtin.file:
+        path: /srv/apps
+        state: directory
+        owner: "{{ username }}"
+        group: "{{ 'wheel' if ansible_os_family == 'RedHat' else 'sudo' }}"
+        mode: "2770"
+      when: ansible_os_family != "RedHat"
+
+    - name: Gather distribution specific variables
+      ansible.builtin.set_fact:
+        distro: "{{ ansible_distribution | lower }}"
+        os_family: "{{ ansible_os_family | lower }}"
+        # 这里docker 源认 amd64 而不是 x86_64
+        architecture: "{{
+          'arm64' if ansible_architecture == 'aarch64'
+          else 'amd64' if ansible_architecture == 'x86_64'
+          else ansible_architecture
+          }}"
+        version_codename: "{{ ansible_lsb.codename | default(ansible_distribution_release) }}"
+
+    - name: 显示收集到的发行版信息
+      ansible.builtin.debug:
+        msg: "Distribution: {{ distro }}, Version Codename: {{ version_codename }}, Architecture: {{ architecture }}, OS Family: {{ os_family }}"
+
+    - name: Install prerequisites for debian-based systems
+      when: os_family == "debian"
+      block:
+        - name: Install prerequisites
+          ansible.builtin.apt:
+            name:
+              - ca-certificates
+              - gnupg
+              - lsb-release
+              - curl
+            update_cache: true
+            state: present
+
+        - name: Create directory for apt keyrings
+          ansible.builtin.file:
+            path: /etc/apt/keyrings
+            state: directory
+            mode: "0755"
+
+        - name: Download Docker's official GPG key
+          ansible.builtin.get_url:
+            url: "https://download.docker.com/linux/{{ distro }}/gpg"
+            dest: /etc/apt/keyrings/docker.asc
+            mode: "0644"
+
+    - name: Add Docker repository for ubuntu
+      when: distro == "ubuntu"
+      ansible.builtin.apt_repository:
+        repo: "deb [arch={{ architecture }} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu {{ version_codename }} stable"
+        state: present
+        filename: docker
+
+    - name: Add Docker repository for debian
+      when: distro == "debian"
+      ansible.builtin.copy:
+        content: |
+          Types: deb
+          URIs: https://download.docker.com/linux/debian
+          Suites: {{ version_codename }}
+          Components: stable
+          Signed-By: /etc/apt/keyrings/docker.asc
+        dest: /etc/apt/sources.list.d/docker.list
+        mode: "0644"
+
+    - name: Install prerequisites for rhel-based systems
+      when: os_family == "redhat"
+      block:
+        - name: Install dnf-plugins-core
+          ansible.builtin.package:
+            name:
+              - dnf-plugins-core
+            state: present
+        - name: Add Docker repository
+          ansible.builtin.yum_repository:
+            name: docker-ce
+            description: Docker CE Repository
+            baseurl: "https://download.docker.com/linux/centos/{{
+              'rehl' if distro == 'redhat'
+              else distro
+              }}/$releasever/$basearch/stable"
+            gpgcheck: true
+            gpgkey: https://download.docker.com/linux/{{
+              'rhel' if distro == 'redhat'
+              else 'centos' if distro == 'centos'
+              else 'fedora'
+              }}/gpg
+            enabled: true
+
+    - name: Clean package manager cache for debian-based systems
+      when: os_family == "debian"
+      ansible.builtin.apt:
+        update_cache: true
+
+    - name: Install Docker packages
+      ansible.builtin.package:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+        state: present
+
+    - name: Add user to docker group
+      ansible.builtin.user:
+        name: "{{ username }}"
+        groups: docker
+        append: true
+
+    - name: Ensure Docker service is started and enabled
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Verify Docker installation
+      ansible.builtin.command: docker --version
+      register: docker_version
+      changed_when: false
+
+    - name: Display Docker version
+      ansible.builtin.debug:
+        msg: "{{ docker_version.stdout }}"
+
+    - name: 清理 SSH 隧道
+      delegate_to: localhost
+      become: false
+      ansible.builtin.shell: |
+        pkill -f "ssh.*-R 1080:127.0.0.1:22119" || true
+      args:
+        executable: /bin/bash
+      when: ssh_tunnel_check.rc == 0
+      changed_when: ssh_tunnel_check.rc == 0
