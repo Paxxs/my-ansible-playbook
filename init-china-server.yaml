@@ -22,7 +22,7 @@
     - name: 检查反向隧道是否已存在
       delegate_to: localhost
       become: false
-      ansible.builtin.shell: pgrep -f "ssh.*-R 1080:127.0.0.1:22119.*{{ inventory_hostname }}"
+      ansible.builtin.shell: pgrep -f "ssh.*-R 1080:127.0.0.1:22119.*{{ ansible_host }}"
       register: ssh_tunnel_check
       changed_when: false
       failed_when:
@@ -33,7 +33,7 @@
       delegate_to: localhost
       become: false
       ansible.builtin.shell: |
-        ssh -f -N -R 1080:127.0.0.1:22119 {{ ansible_user }}@{{ inventory_hostname }} \
+        ssh -f -N -R 1080:127.0.0.1:22119 {{ ansible_user }}@{{ ansible_host }} \
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=/dev/null \
             -o ServerAliveInterval=60 \
@@ -43,9 +43,8 @@
       async: 30
       poll: 0
       register: ssh_tunnel_job
-      when: ssh_tunnel_check.rc != 0
-      changed_when: ssh_tunnel_job.rc == 0
-      failed_when: ssh_tunnel_job.rc != 0
+      when: ssh_tunnel_check.rc != 0 # 当没有找到进程时执行
+      changed_when: false
 
     - name: 等待隧道建立
       ansible.builtin.pause:
@@ -54,7 +53,7 @@
     - name: 测试网络连接
       environment: "{{ proxy_env }}"
       block:
-        - name: 测试代理连接
+        - name: 测试国际连接
           ansible.builtin.uri:
             url: "https://www.google.com"
             status_code: 200
@@ -254,7 +253,7 @@
       ansible.builtin.debug:
         msg: "{{ docker_version.stdout }}"
 
-    - name: 清理 SSH 隧道
+    - name: 清理隧道
       delegate_to: localhost
       become: false
       ansible.builtin.shell: |
