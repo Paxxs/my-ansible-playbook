@@ -1,8 +1,4 @@
 ---
-- name: 显示收集到的发行版信息
-  ansible.builtin.debug:
-    msg: "Distribution: {{ distro }}, Version Codename: {{ docker_version_codename }}, OS Family: {{ os_family }}"
-
 - name: Ensure apt key is not present in trusted.gpg.d
   ansible.builtin.file:
     path: /etc/apt/trusted.gpg.d/docker.asc

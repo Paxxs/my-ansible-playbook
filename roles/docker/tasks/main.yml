@@ -10,6 +10,10 @@
       paths:
         - 'vars'
 
+- name: 显示收集到的发行版信息
+  ansible.builtin.debug:
+    msg: "Distribution: {{ ansible_facts.distribution }}, Version Codename: {{ docker_version_codename }}, OS Family: {{ ansible_facts.os_family }}"
+
 - name: Include OS-specific setup tasks.
   ansible.builtin.include_tasks:
     file: setup-debian.yml
