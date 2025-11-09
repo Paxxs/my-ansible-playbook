@@ -8,78 +8,9 @@
     username: myuser
     user_password: "1234"
 
-  tasks:
-    - name: 安装基础软件
-      ansible.builtin.package:
-        name:
-          - sudo
-          - wget
-          - curl
-          - git
-          - fish
-          - tmux
-          - neovim
-          - ranger
-          - htop
-          - neofetch
-        state: present
-
-    - name: 创建用户
-      ansible.builtin.user:
-        name: "{{ username }}"
-        shell: /bin/bash
-        password: "{{ user_password | password_hash('sha512') }}"
-        create_home: true
-        state: present
-
-    - name: 检查是否已存在 exec fish 配置
-      ansible.builtin.shell: grep -q "exec fish" /home/{{ username }}/.bashrc && echo "exists" || echo "not"
-      register: fish_check
-      changed_when: false
-      ignore_errors: true
-
-    - name: 在 .bashrc 中添加自动启动 fish 的配置
-      ansible.builtin.blockinfile:
-        path: /home/{{ username }}/.bashrc
-        block: |
-          if [[ $(ps --no-header --pid=$PPID --format=comm) != "fish" && -z ${BASH_EXECUTION_STRING} && ${SHLVL} == 1 ]]
-          then
-            shopt -q login_shell && LOGIN_OPTION='--login' || LOGIN_OPTION=''
-            exec fish $LOGIN_OPTION
-          fi
-        marker: "# {mark} ANSIBLE MANAGED BLOCK - fish auto start"
-      when: "'exists' not in fish_check.stdout"
-
-    - name: 为 Debian 系用户添加 sudo 组
-      ansible.builtin.user:
-        name: "{{ username }}"
-        groups: sudo
-        append: true
-      when: ansible_os_family == "Debian"
-
-    - name: 为 RHEL 系用户添加 wheel 组
-      ansible.builtin.user:
-        name: "{{ username }}"
-        groups: wheel
-        append: true
-      when: ansible_os_family == "RedHat"
-
-    - name: 创建 /srv/apps 目录
-      ansible.builtin.file:
-        path: /srv/apps
-        state: directory
-        owner: "{{ username }}"
-        group: "{{ 'wheel' if ansible_os_family == 'RedHat' else 'sudo' }}"
-        mode: "2770"
-        setype: default_t
-      when: ansible_os_family == "RedHat"
-
-    # ubuntu 上默认是 Apparmor
-    - name: 创建 /srv/apps 目录 (非 SELinux 系统)
-      ansible.builtin.file:
-        path: /srv/apps
-        state: directory
-        owner: "{{ username }}"
-        group: "{{ 'wheel' if ansible_os_family == 'RedHat' else 'sudo' }}"
-        mode: "2770"
-      when: ansible_os_family != "RedHat"
+  roles:
+    - role: init-server
+      vars:
+        user_name: "{{ username }}"
+        user_password: "{{ user_password }}"
+    - docker
