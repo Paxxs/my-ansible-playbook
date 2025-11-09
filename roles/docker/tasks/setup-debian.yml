@@ -1,0 +1,49 @@
+---
+- name: 显示收集到的发行版信息
+  ansible.builtin.debug:
+    msg: "Distribution: {{ distro }}, Version Codename: {{ docker_version_codename }}, OS Family: {{ os_family }}"
+
+- name: Ensure apt key is not present in trusted.gpg.d
+  ansible.builtin.file:
+    path: /etc/apt/trusted.gpg.d/docker.asc
+    state: absent
+
+- name: Ensure old apt source list is not present in /etc/apt/sources.list.d
+  ansible.builtin.file:
+    path: "/etc/apt/sources.list.d/docker.sources"
+    state: absent
+
+# See https://docs.docker.com/engine/install/debian/#uninstall-old-versions
+- name: Ensure old versions of Docker are not installed.
+  ansible.builtin.package:
+    name: "{{ docker_obsolete_packages }}"
+    state: absent
+
+- name: Ensure legacy repo file is not present.
+  ansible.builtin.file:
+    path: "/etc/apt/sources.list.d/docker.list"
+    state: absent
+
+- name: Install prerequisites
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - gnupg
+      - lsb-release
+      - curl
+    update_cache: true
+    state: present
+
+- name: Add Docker Repository
+  ansible.builtin.deb822_repository:
+    name: "docker"
+    types: "deb"
+    uris: "{{ docker_repo_url }}/{{ docker_apt_distribution | lower }}"
+    suites: "{{ docker_version_codename }}"
+    components: "{{ docker_apt_release_channel }}"
+    signed_by: "{{ docker_apt_gpg_key }}"
+    state: present
+  notify: Clear apt cache
+
+- name: Force all notified handlers to run at this point, not waiting for normal sync points
+  ansible.builtin.meta: flush_handlers

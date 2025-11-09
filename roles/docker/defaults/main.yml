@@ -1,0 +1,41 @@
+---
+# 低优先级的默认变量可以放在这里
+# Edition can be one of: 'ce' (Community Edition) or 'ee' (Enterprise Edition).
+docker_edition: 'ce'
+docker_packages:
+  - "docker-{{ docker_edition }}"
+  - "docker-{{ docker_edition }}-cli"
+  - "docker-{{ docker_edition }}-rootless-extras"
+  - "containerd.io"
+  - docker-buildx-plugin
+docker_obsolete_packages:
+  - docker
+  - docker.io
+  - docker-engine
+  - docker-doc
+  - docker-compose
+  - docker-compose-v2
+  - podman-docker
+  - containerd
+  - runc
+
+# Enable repo setup
+docker_add_repo: true
+
+# Docker repo URL.
+docker_repo_url: https://download.docker.com/linux
+
+# debian-based vars
+docker_apt_distribution: "{{ 'ubuntu' if ansible_facts.distribution in ['Pop!_OS', 'Linux Mint'] else ansible_facts.distribution }}"
+docker_apt_gpg_key: "https://download.docker.com/linux/{{ docker_distro | lower }}/gpg"
+docker_apt_release_channel: stable
+
+docker_version_codename: "{{ ansible_lsb.codename | default(ansible_distribution_release) }}"
+
+# rhel-based vars
+# Used only for RedHat/CentOS/Fedora.
+docker_yum_distro: "{{ 'fedora' if ansible_facts.distribution == 'Fedora' else 'rhel' if ansible_facts.distribution == 'RedHat' else 'centos' }}"
+docker_yum_repo_url: "{{ docker_repo_url }}/{{ docker_yum_distro }}/docker-{{ docker_edition }}.repo"
+docker_yum_repo_enable_nightly: '0'
+docker_yum_repo_enable_test: '0'
+docker_yum_gpg_key: "{{ docker_repo_url }}/{{ docker_yum_distro }}/gpg"
