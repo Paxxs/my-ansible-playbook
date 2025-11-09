@@ -1,0 +1,14 @@
+---
+user_name: "myuser"
+user_password: "1234"
+init_packages:
+  - sudo
+  - wget
+  - curl
+  - git
+  - fish
+  - tmux
+  - neovim
+  - ranger
+  - htop
+  - neofetch
