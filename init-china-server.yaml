@@ -76,4 +76,8 @@
     - role: init-server
       vars:
         user_password: "12345"  # 覆盖默认密码
-    - docker
+    - role: docker
+      vars:
+        docker_add_repo: false
+        docker_users:
+          - "{{ username }}"

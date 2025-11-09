@@ -25,6 +25,8 @@ docker_add_repo: true
 # Docker repo URL.
 docker_repo_url: https://download.docker.com/linux
 
+docker_users: []
+
 # debian-based vars
 docker_apt_distribution: "{{ 'ubuntu' if ansible_facts.distribution in ['Pop!_OS', 'Linux Mint'] else ansible_facts.distribution }}"
 docker_apt_gpg_key: "https://download.docker.com/linux/{{ docker_apt_distribution | lower }}/gpg"
