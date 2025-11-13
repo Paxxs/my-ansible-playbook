@@ -77,9 +77,14 @@
   roles:
     - role: init-server
       vars:
-        user_password: "12345"  # 覆盖默认密码
+        user_password: "12345" # 覆盖默认密码
     - role: docker
       vars:
-        docker_add_repo: false
+        docker_add_repo: true
         docker_users:
           - "{{ username }}"
+    - role: docker_proxy
+      vars:
+        docker_proxy_url: "socks5h://localhost:1080"
+        docker_proxy_no_proxy_list: "localhost,127.0.0.1,docker-registry.somecorporate.com"
+      when: enable_proxy | default(false)
