@@ -13,3 +13,4 @@ init_packages:
   - htop
   - neofetch
   - iperf3
+  - mosh

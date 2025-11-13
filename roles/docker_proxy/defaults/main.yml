@@ -1,0 +1,2 @@
+docker_proxy_url: "socks5h://localhost:1080"
+docker_proxy_no_proxy_list: "localhost"
