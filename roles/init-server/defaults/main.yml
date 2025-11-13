@@ -12,3 +12,4 @@ init_packages:
   - ranger
   - htop
   - neofetch
+  - iperf3
