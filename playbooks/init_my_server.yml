@@ -4,13 +4,6 @@
   become: true
   # gather_facts: true
 
-  vars:
-    username: myuser
-    proxy_env:
-      http_proxy: "socks5h://127.0.0.1:1080"
-      https_proxy: "socks5h://127.0.0.1:1080"
-      all_proxy: "socks5h://127.0.0.1:1080"
-
   environment: "{{ proxy_env }}"
 
   pre_tasks:
@@ -77,6 +70,7 @@
   roles:
     - role: init-server
       vars:
+        user_name: "{{ username }}"
         user_password: "12345" # 覆盖默认密码
     - role: docker
       vars:
@@ -84,7 +78,4 @@
         docker_users:
           - "{{ username }}"
     - role: docker_proxy
-      vars:
-        docker_proxy_url: "socks5h://localhost:1080"
-        docker_proxy_no_proxy_list: "localhost,127.0.0.1,docker-registry.somecorporate.com"
       when: enable_proxy | default(false)
