@@ -21,7 +21,9 @@
       "extensions": [
         "redhat.ansible",
         "redhat.vscode-redhat-account",
-        "EditorConfig.EditorConfig"
+        "EditorConfig.EditorConfig",
+        "wholroyd.jinja",
+        "IkBenGeenRobot.ansible-variable-lookup"
       ]
     }
   }
