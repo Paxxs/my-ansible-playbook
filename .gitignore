@@ -1,0 +1,23 @@
+# Ansible 运行/缓存
+*.retry
+.ansible/
+
+# 外部依赖（用 requirements 安装，不进库）
+roles/external/
+
+# Python/测试产物
+.venv/
+__pycache__/
+*.pyc
+.molecule/
+
+# 绝对不要进库的秘密材料
+.vault_pass
+.vault_pass.txt
+.secrets/
+*.pem
+*.key
+*.pfx
+*.crt
+*.kubeconfig
+*.env
