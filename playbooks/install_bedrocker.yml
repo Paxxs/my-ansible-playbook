@@ -1,0 +1,57 @@
+---
+- name: Deploy mc service
+  hosts: dev
+
+  tasks:
+    - name: Check if mc directory already exists
+      ansible.builtin.stat:
+        path: /src/mc
+      register: mc_dir
+
+    - name: Confirm before overwriting existing mc directory
+      ansible.builtin.pause:
+        prompt: "/src/mc already exists. Type 'yes' to continue and overwrite, or anything else to abort."
+      register: mc_overwrite_response
+      when: mc_dir.stat.exists
+
+    - name: Abort because user declined overwrite
+      ansible.builtin.fail:
+        msg: "Aborted by user to avoid overwriting existing /src/mc."
+      when:
+        - mc_dir.stat.exists
+        - mc_overwrite_response.user_input | default('') | lower != 'yes'
+
+    - name: Ensure /src exists
+      ansible.builtin.file:
+        path: /src
+        state: directory
+        mode: '0755'
+
+    - name: Upload mc archive
+      ansible.builtin.copy:
+        src: temp/mc.tar.gz
+        dest: /tmp/mc.tar.gz
+        mode: '0644'
+
+    - name: Extract mc archive into /src
+      ansible.builtin.unarchive:
+        src: /tmp/mc.tar.gz
+        dest: /src
+        remote_src: true
+
+    - name: Verify mc directory is present
+      ansible.builtin.stat:
+        path: /src/mc
+      register: mc_dir_after
+
+    - name: Fail if mc directory missing
+      ansible.builtin.fail:
+        msg: "Expected mc directory at /src/mc but it was not found."
+      when: not mc_dir_after.stat.exists
+
+    - name: Start mc with Docker Compose
+      ansible.builtin.command:
+        cmd: docker compose up -d
+        chdir: /src/mc
+      register: mc_compose
+      changed_when: "'Creating' in mc_compose.stdout or 'Recreating' in mc_compose.stdout or 'Starting' in mc_compose.stdout"

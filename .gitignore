@@ -21,3 +21,7 @@ __pycache__/
 *.crt
 *.kubeconfig
 *.env
+temp/*
+!temp/.gitkeep
+
+
