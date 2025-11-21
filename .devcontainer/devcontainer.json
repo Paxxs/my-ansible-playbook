@@ -1,5 +1,5 @@
 {
-  "name": "ansible-dev-container-codespaces",
+  "name": "ansible-dev-container-docker",
   "image": "ghcr.io/ansible/community-ansible-dev-tools:latest",
   "containerUser": "root",
   "runArgs": [
@@ -18,7 +18,17 @@
   "updateRemoteUserUID": true,
   "customizations": {
     "vscode": {
-      "extensions": ["redhat.ansible","redhat.vscode-redhat-account"]
+      "extensions": [
+        "redhat.ansible",
+        "redhat.vscode-redhat-account",
+        "EditorConfig.EditorConfig",
+        "wholroyd.jinja",
+        "IkBenGeenRobot.ansible-variable-lookup",
+        "openai.chatgpt"
+      ]
     }
-  }
+  },
+  "mounts": [
+    "source=${localEnv:HOME}/.codex,target=/root/.codex,type=bind,consistency=cached"
+  ]
 }
