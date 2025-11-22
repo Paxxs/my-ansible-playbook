@@ -1,0 +1,10 @@
+---
+- name: Stop reverse tunnel started by this run
+  delegate_to: localhost
+  become: false
+  ansible.builtin.shell: |
+    pkill -f "ssh.*-R {{ reverse_tunnel_remote_port }}:127.0.0.1:{{ reverse_tunnel_local_port }}.*{{ reverse_tunnel_host }}" || true
+  args:
+    executable: /bin/bash
+  when: reverse_tunnel_started | bool
+  changed_when: reverse_tunnel_started | bool

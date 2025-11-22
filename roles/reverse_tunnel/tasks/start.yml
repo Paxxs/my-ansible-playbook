@@ -1,0 +1,38 @@
+---
+- name: Check if reverse tunnel already exists
+  delegate_to: localhost
+  become: false
+  ansible.builtin.shell: pgrep -f "ssh.*-R {{ reverse_tunnel_remote_port }}:127.0.0.1:{{ reverse_tunnel_local_port }}.*{{ reverse_tunnel_host }}"
+  register: reverse_tunnel_check
+  changed_when: false
+  failed_when:
+    - reverse_tunnel_check.rc != 0
+    - reverse_tunnel_check.rc != 1
+
+- name: Start reverse tunnel in background
+  delegate_to: localhost
+  become: false
+  ansible.builtin.shell: |
+    ssh -f -N -R {{ reverse_tunnel_remote_port }}:127.0.0.1:{{ reverse_tunnel_local_port }} {{ reverse_tunnel_user }}@{{ reverse_tunnel_host }} \
+        -o StrictHostKeyChecking=no \
+        -o UserKnownHostsFile=/dev/null \
+        -o ServerAliveInterval={{ reverse_tunnel_server_alive_interval }} \
+        -o ServerAliveCountMax={{ reverse_tunnel_server_alive_count_max }}
+  args:
+    executable: /bin/bash
+  when: reverse_tunnel_check.rc != 0
+  register: reverse_tunnel_start
+  changed_when: reverse_tunnel_check.rc != 0
+
+- name: Wait for tunnel to establish
+  ansible.builtin.pause:
+    seconds: 3
+
+- name: Set proxy environment variables
+  ansible.builtin.set_fact:
+    reverse_tunnel_proxy_env:
+      http_proxy: "http://127.0.0.1:{{ reverse_tunnel_remote_port }}"
+      https_proxy: "http://127.0.0.1:{{ reverse_tunnel_remote_port }}"
+      all_proxy: "socks5h://127.0.0.1:{{ reverse_tunnel_remote_port }}"
+      no_proxy: "{{ reverse_tunnel_no_proxy }}"
+    reverse_tunnel_started: "{{ reverse_tunnel_check.rc != 0 }}"

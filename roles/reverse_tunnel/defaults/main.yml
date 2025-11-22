@@ -1,0 +1,11 @@
+---
+# Defaults for reverse_tunnel role
+reverse_tunnel_remote_port: 1080
+reverse_tunnel_local_port: 22119
+reverse_tunnel_host: "{{ hostvars[inventory_hostname].ansible_host | default(inventory_hostname) }}"
+reverse_tunnel_user: "{{ ansible_user | default(remote_user) | default('root') }}"
+reverse_tunnel_server_alive_interval: 60
+reverse_tunnel_server_alive_count_max: 3
+reverse_tunnel_no_proxy: "localhost,127.0.0.1"
+reverse_tunnel_proxy_env: {}
+reverse_tunnel_started: false
