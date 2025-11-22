@@ -9,38 +9,42 @@
     src: docker-proxy.conf.j2
     dest: /etc/systemd/system/docker.service.d/proxy.conf
     mode: "0644"
+  register: docker_proxy_dropin
 
-- name: Reload systemd and restart Docker
-  ansible.builtin.systemd:
-    daemon_reload: true
-    name: docker
-    state: restarted
+- name: Apply proxy config and verify docker
+  when: docker_proxy_dropin.changed
+  block:
+    - name: Reload systemd and restart Docker
+      ansible.builtin.systemd:
+        daemon_reload: true
+        name: docker
+        state: restarted
 
-- name: Wait for Docker to be ready
-  ansible.builtin.command: docker info
-  register: docker_info
-  retries: 10
-  delay: 3
-  until: docker_info.rc == 0
-  changed_when: false
+    - name: Wait for Docker to be ready
+      ansible.builtin.command: docker info
+      register: docker_info
+      retries: 10
+      delay: 3
+      until: docker_info.rc == 0
+      changed_when: false
 
-- name: Pull minimal image (hello-world)
-  ansible.builtin.command: docker pull hello-world:latest
-  register: docker_proxy_pull_result
-  changed_when: "'Downloaded' in docker_proxy_pull_result.stdout or 'Downloaded' in docker_proxy_pull_result.stderr"
+    - name: Pull minimal image (hello-world)
+      ansible.builtin.command: docker pull hello-world:latest
+      register: docker_proxy_pull_result
+      changed_when: "'Downloaded' in docker_proxy_pull_result.stdout or 'Downloaded' in docker_proxy_pull_result.stderr"
 
-- name: Run hello-world to verify
-  ansible.builtin.command: docker run --rm hello-world:latest
-  register: docker_proxy_hello_run
-  changed_when: false
+    - name: Run hello-world to verify
+      ansible.builtin.command: docker run --rm hello-world:latest
+      register: docker_proxy_hello_run
+      changed_when: false
 
-- name: Assert Docker works
-  ansible.builtin.assert:
-    that:
-      - docker_proxy_hello_run.rc == 0
-      - "'Hello from Docker!' in docker_proxy_hello_run.stdout"
+    - name: Assert Docker works
+      ansible.builtin.assert:
+        that:
+          - docker_proxy_hello_run.rc == 0
+          - "'Hello from Docker!' in docker_proxy_hello_run.stdout"
 
-- name: Clean up hello-world image
-  ansible.builtin.command: docker rmi hello-world:latest
-  register: docker_proxy_cleanup
-  changed_when: "'Untagged' in docker_proxy_cleanup.stdout or 'Deleted' in docker_proxy_cleanup.stdout"
+    - name: Clean up hello-world image
+      ansible.builtin.command: docker rmi hello-world:latest
+      register: docker_proxy_cleanup
+      changed_when: "'Untagged' in docker_proxy_cleanup.stdout or 'Deleted' in docker_proxy_cleanup.stdout"
