@@ -51,7 +51,7 @@
     name: "{{ init_packages }}"
     state: present
 
-- name: 创建用户
+- name: 创建用户 {{ user_name }}
   ansible.builtin.user:
     name: "{{ user_name }}"
     shell: /bin/bash
@@ -59,7 +59,7 @@
     create_home: true
     state: present
 
-- name: 将用户加入管理员组
+- name: 将用户加入管理员组 {{ admin_group }}
   ansible.builtin.user:
     name: "{{ user_name }}"
     groups: "{{ admin_group }}"
