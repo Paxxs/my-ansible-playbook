@@ -1,4 +1,51 @@
 ---
+- name: 确保已提供用户密码
+  ansible.builtin.assert:
+    that:
+      - (user_password | default('')) | length > 0
+    fail_msg: "必须提供 user_password，可在 .secrets/init_my_server.yml（或通过 -e user_password=...）设置，避免将明文密码写入仓库。"
+
+- name: 设置管理员组
+  ansible.builtin.set_fact:
+    admin_group: "{{ 'wheel' if ansible_os_family == 'RedHat' else 'sudo' }}"
+  changed_when: false
+
+- name: 计算 SELinux 状态
+  ansible.builtin.set_fact:
+    selinux_enabled: "{{ (ansible_selinux is defined) and (ansible_selinux.status == 'enabled') }}"
+  changed_when: false
+
+- name: 更新软件包索引 (apt)
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: "{{ init_upgrade_cache_valid_time }}"
+  when:
+    - init_upgrade_packages
+    - ansible_pkg_mgr == "apt"
+
+- name: 更新软件包索引 (dnf/yum)
+  ansible.builtin.dnf:
+    update_cache: true
+  when:
+    - init_upgrade_packages
+    - ansible_pkg_mgr in ["dnf", "yum"]
+
+- name: 全量升级软件包 (apt)
+  ansible.builtin.apt:
+    upgrade: dist
+  when:
+    - init_upgrade_packages
+    - ansible_pkg_mgr == "apt"
+
+- name: 全量升级软件包 (dnf/yum)
+  ansible.builtin.dnf: # noqa package-latest
+    name: "*"
+    state: latest
+    update_only: true
+  when:
+    - init_upgrade_packages
+    - ansible_pkg_mgr in ["dnf", "yum"]
+
 - name: 安装基础软件
   ansible.builtin.package:
     name: "{{ init_packages }}"
@@ -6,21 +53,25 @@
 
 - name: 创建用户
   ansible.builtin.user:
-    name: "{{ username }}"
+    name: "{{ user_name }}"
     shell: /bin/bash
-    password: "{{ user_password | password_hash('sha512') }}"
+    password: "{{ user_password | password_hash('sha512', user_password_salt) }}"
     create_home: true
     state: present
 
-- name: 检查是否已存在 exec fish 配置
-  ansible.builtin.shell: grep -q "exec fish" /home/{{ username }}/.bashrc && echo "exists" || echo "not"
-  register: fish_check
-  changed_when: false
-  ignore_errors: true
+- name: 将用户加入管理员组
+  ansible.builtin.user:
+    name: "{{ user_name }}"
+    groups: "{{ admin_group }}"
+    append: true
 
 - name: 在 .bashrc 中添加自动启动 fish 的配置
   ansible.builtin.blockinfile:
-    path: /home/{{ username }}/.bashrc
+    path: "/home/{{ user_name }}/.bashrc"
+    create: true
+    owner: "{{ user_name }}"
+    group: "{{ user_name }}"
+    mode: "0644"
     block: |
       if [[ $(ps --no-header --pid=$PPID --format=comm) != "fish" && -z ${BASH_EXECUTION_STRING} && ${SHLVL} == 1 ]]
       then
@@ -28,38 +79,12 @@
         exec fish $LOGIN_OPTION
       fi
     marker: "# {mark} ANSIBLE MANAGED BLOCK - fish auto start"
-  when: "'exists' not in fish_check.stdout"
-
-- name: 为 Debian 系用户添加 sudo 组
-  ansible.builtin.user:
-    name: "{{ username }}"
-    groups: sudo
-    append: true
-  when: ansible_os_family == "Debian"
-
-- name: 为 RHEL 系用户添加 wheel 组
-  ansible.builtin.user:
-    name: "{{ username }}"
-    groups: wheel
-    append: true
-  when: ansible_os_family == "RedHat"
 
 - name: 创建 /srv/apps 目录
   ansible.builtin.file:
     path: /srv/apps
     state: directory
-    owner: "{{ username }}"
-    group: "{{ 'wheel' if ansible_os_family == 'RedHat' else 'sudo' }}"
+    owner: "{{ user_name }}"
+    group: "{{ admin_group }}"
     mode: "2770"
-    setype: default_t
-  when: ansible_os_family == "RedHat"
-
-# ubuntu 上默认是 Apparmor
-- name: 创建 /srv/apps 目录 (非 SELinux 系统)
-  ansible.builtin.file:
-    path: /srv/apps
-    state: directory
-    owner: "{{ username }}"
-    group: "{{ 'wheel' if ansible_os_family == 'RedHat' else 'sudo' }}"
-    mode: "2770"
-  when: ansible_os_family != "RedHat"
+    setype: "{{ 'default_t' if selinux_enabled and ansible_os_family == 'RedHat' else omit }}"

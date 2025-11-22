@@ -1,6 +1,16 @@
 ---
-user_name: "myuser"
-user_password: "1234"
+# 将 inventory 中的 username 值作为默认 user_name，便于兼容既有变量命名
+user_name: "{{ username | default('myuser') }}"
+
+# 密码需通过外部文件/extra_vars 提供，不在仓库中保存
+user_password: ""
+# 固定的 salt 保证密码哈希在多次执行时保持一致，避免非预期变更
+user_password_salt: "{{ user_name }}"
+
+init_upgrade_packages: false
+# 仅在 apt 系统上使用，用于控制缓存刷新频率（秒）
+init_upgrade_cache_valid_time: 3600
+
 init_packages:
   - sudo
   - wget

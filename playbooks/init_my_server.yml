@@ -4,8 +4,42 @@
   become: true
   # gather_facts: true
   environment: "{{ reverse_tunnel_proxy_env | default({}) }}"
+  vars:
+    init_server_secret_file: "{{ playbook_dir }}/../.secrets/init_my_server.yml"
 
   pre_tasks:
+    - name: 检查私密变量文件是否存在
+      ansible.builtin.stat:
+        path: "{{ init_server_secret_file }}"
+      delegate_to: localhost
+      register: init_server_secret_file_stat
+      become: false
+      no_log: true
+
+    - name: 加载私密变量（本地）
+      ansible.builtin.include_vars:
+        file: "{{ init_server_secret_file }}"
+      when: init_server_secret_file_stat.stat.exists
+      delegate_to: localhost
+      become: false
+      register: init_server_secret_vars
+      no_log: true
+
+    - name: 分发私密变量到各主机
+      ansible.builtin.set_fact:
+        user_password: "{{ init_server_secret_vars.ansible_facts.user_password }}"
+      when:
+        - init_server_secret_file_stat.stat.exists
+        - init_server_secret_vars is defined
+        - init_server_secret_vars.ansible_facts.user_password is defined
+      no_log: true
+
+    - name: 确认已提供用户密码
+      ansible.builtin.assert:
+        that:
+          - (user_password | default('')) | length > 0
+        fail_msg: "请在 {{ init_server_secret_file }} 定义 user_password（可使用 ansible-vault 加密），或通过 -e user_password=... 传入。"
+
     - name: 建立反向隧道并设置代理
       when: enable_proxy | default(false)
       block:
@@ -35,7 +69,6 @@
     - role: init-server
       vars:
         user_name: "{{ username }}"
-        user_password: "12345" # 覆盖默认密码
     - role: docker
       vars:
         docker_add_repo: true
