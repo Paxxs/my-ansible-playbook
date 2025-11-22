@@ -3,47 +3,16 @@
   hosts: all
   become: true
   # gather_facts: true
-
-  environment: "{{ proxy_env }}"
+  environment: "{{ reverse_tunnel_proxy_env | default({}) }}"
 
   pre_tasks:
-    # - name: 显示所有 ansible_facts
-    #   ansible.builtin.debug:
-    #     var: ansible_facts
-
-    - name: 检查反向隧道是否已存在
-      delegate_to: localhost
-      become: false
-      ansible.builtin.shell: pgrep -f "ssh.*-R 1080:127.0.0.1:22119.*{{ ansible_host }}"
-      register: ssh_tunnel_check
-      changed_when: false
-      failed_when:
-        - ssh_tunnel_check.rc != 0
-        - ssh_tunnel_check.rc != 1
-
-    - name: 建立反向隧道（后台运行）
-      delegate_to: localhost
-      become: false
-      ansible.builtin.shell: |
-        ssh -f -N -R 1080:127.0.0.1:22119 {{ ansible_user }}@{{ ansible_host }} \
-            -o StrictHostKeyChecking=no \
-            -o UserKnownHostsFile=/dev/null \
-            -o ServerAliveInterval=60 \
-            -o ServerAliveCountMax=3
-      args:
-        executable: /bin/bash
-      async: 30
-      poll: 0
-      register: ssh_tunnel_job
-      when: ssh_tunnel_check.rc != 0 # 当没有找到进程时执行
-      changed_when: false
-
-    - name: 等待隧道建立
-      ansible.builtin.pause:
-        seconds: 3
-
-    - name: 测试网络连接
+    - name: 建立反向隧道并设置代理
+      when: enable_proxy | default(false)
       block:
+        - name: 导入反向隧道角色的启动任务
+          ansible.builtin.import_role:
+            name: reverse_tunnel
+            tasks_from: start
         - name: 测试Google的访问，并输出内容
           ansible.builtin.uri:
             url: https://www.google.com
@@ -51,21 +20,16 @@
             status_code:
               - 200
           register: google_test
-
         - name: 显示Google测试结果
           ansible.builtin.debug:
             msg: "Google访问成功，内容：{{ google_test.content | truncate(100) }}"
 
   post_tasks:
-    - name: 清理隧道
-      delegate_to: localhost
-      become: false
-      ansible.builtin.shell: |
-        pkill -f "ssh.*-R 1080:127.0.0.1:22119" || true
-      args:
-        executable: /bin/bash
-      when: ssh_tunnel_check.rc == 0
-      changed_when: ssh_tunnel_check.rc == 0
+    - name: 清理反向隧道
+      ansible.builtin.import_role:
+        name: reverse_tunnel
+        tasks_from: stop
+      when: reverse_tunnel_started
 
   roles:
     - role: init-server
