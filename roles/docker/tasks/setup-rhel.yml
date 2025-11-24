@@ -4,6 +4,14 @@
     name: "{{ docker_obsolete_packages }}"
     state: absent
 
+- name: Install repository management prerequisites.
+  ansible.builtin.package:
+    name: "{{ docker_yum_repo_prereq_packages }}"
+    state: present
+  when:
+    - docker_add_repo | bool
+    - docker_yum_repo_prereq_packages | length > 0
+
 - name: Add Docker GPG key.
   ansible.builtin.rpm_key:
     key: "{{ docker_yum_gpg_key }}"
@@ -39,8 +47,10 @@
     no_extra_spaces: true
   when: docker_add_repo | bool
 
-- name: Configure containerd on RHEL 8.
-  when: ansible_facts.distribution_major_version | int == 8
+- name: Prepare container runtime dependencies on RHEL 8+ (non-Fedora).
+  when:
+    - ansible_facts.distribution != "Fedora"
+    - ansible_facts.distribution_major_version | int >= 8
   block:
     - name: Ensure runc is not installed.
       ansible.builtin.package:
@@ -49,8 +59,9 @@
 
     - name: Ensure container-selinux is installed.
       ansible.builtin.package:
-        name: container-selinux
+        name: "{{ docker_rhel_selinux_packages }}"
         state: present
+      when: docker_rhel_selinux_packages | length > 0
 
     - name: Ensure containerd.io is installed.
       ansible.builtin.package:

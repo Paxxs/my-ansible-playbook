@@ -35,6 +35,9 @@ docker_apt_release_channel: stable
 docker_version_codename: "{{ ansible_lsb.codename | default(ansible_distribution_release) }}"
 
 # rhel-based vars
+docker_yum_repo_prereq_packages: "{{ ['dnf-plugins-core'] if ansible_facts.pkg_mgr == 'dnf' else ['yum-utils'] }}"
+docker_rhel_selinux_packages:
+  - container-selinux
 # Used only for RedHat/CentOS/Fedora.
 docker_yum_distro: "{{ 'fedora' if ansible_facts.distribution == 'Fedora' else 'rhel' if ansible_facts.distribution == 'RedHat' else 'centos' }}"
 docker_yum_repo_url: "{{ docker_repo_url }}/{{ docker_yum_distro }}/docker-{{ docker_edition }}.repo"
