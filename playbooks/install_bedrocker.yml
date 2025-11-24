@@ -1,57 +1,102 @@
 ---
 - name: Deploy mc service
   hosts: dev
+  become: true
+
+  environment: "{{ reverse_tunnel_proxy_env | default({}) }}"
+
+  pre_tasks:
+    # - name: 显示所有 ansible_facts
+    #   ansible.builtin.debug:
+    #     var: ansible_facts
+    - name: 建立反向隧道并设置代理
+      when: enable_proxy | default(false)
+      block:
+        - name: 导入反向隧道角色的启动任务
+          ansible.builtin.import_role:
+            name: reverse_tunnel
+            tasks_from: start
+        - name: 测试Google的访问，并输出内容
+          ansible.builtin.uri:
+            url: https://www.google.com
+            return_content: true
+            status_code:
+              - 200
+          register: google_test
+
+        - name: 显示Google测试结果
+          ansible.builtin.debug:
+            msg: "Google访问成功，内容：{{ google_test.content | truncate(100) }}"
+
+  post_tasks:
+    - name: 清理反向隧道
+      ansible.builtin.import_role:
+        name: reverse_tunnel
+        tasks_from: stop
+      when: reverse_tunnel_started
 
   tasks:
-    - name: Check if mc directory already exists
+    - name: 定义路径
+      ansible.builtin.set_fact:
+        mc_root: /srv/apps/mc
+        mc_archive_remote: /tmp/mc.tar.gz
+      changed_when: false
+
+    - name: 检查目标目录是否存在
       ansible.builtin.stat:
-        path: /src/mc
+        path: "{{ mc_root }}"
       register: mc_dir
+      changed_when: false
 
-    - name: Confirm before overwriting existing mc directory
-      ansible.builtin.pause:
-        prompt: "/src/mc already exists. Type 'yes' to continue and overwrite, or anything else to abort."
-      register: mc_overwrite_response
-      when: mc_dir.stat.exists
-
-    - name: Abort because user declined overwrite
-      ansible.builtin.fail:
-        msg: "Aborted by user to avoid overwriting existing /src/mc."
-      when:
-        - mc_dir.stat.exists
-        - mc_overwrite_response.user_input | default('') | lower != 'yes'
-
-    - name: Ensure /src exists
+    - name: 确保 /srv/apps 存在
       ansible.builtin.file:
-        path: /src
+        path: /srv/apps
         state: directory
         mode: '0755'
 
-    - name: Upload mc archive
+    - name: 上传 mc 压缩包
       ansible.builtin.copy:
-        src: temp/mc.tar.gz
-        dest: /tmp/mc.tar.gz
+        src: ../temp/mc.tar.gz
+        dest: "{{ mc_archive_remote }}"
         mode: '0644'
+      register: mc_archive
 
-    - name: Extract mc archive into /src
+    - name: 解压 mc 压缩包到目标目录
       ansible.builtin.unarchive:
-        src: /tmp/mc.tar.gz
-        dest: /src
+        src: "{{ mc_archive_remote }}"
+        dest: /srv/apps
         remote_src: true
+      when: mc_archive.changed or not mc_dir.stat.exists
 
-    - name: Verify mc directory is present
+    - name: 确认 mc 目录存在
       ansible.builtin.stat:
-        path: /src/mc
+        path: "{{ mc_root }}"
       register: mc_dir_after
+      changed_when: false
 
-    - name: Fail if mc directory missing
+    - name: 若缺失则失败
       ansible.builtin.fail:
-        msg: "Expected mc directory at /src/mc but it was not found."
+        msg: "Expected mc directory at {{ mc_root }} but it was not found."
       when: not mc_dir_after.stat.exists
 
-    - name: Start mc with Docker Compose
+    - name: 使用 Docker Compose 启动服务
       ansible.builtin.command:
         cmd: docker compose up -d
-        chdir: /src/mc
+        chdir: "{{ mc_root }}"
       register: mc_compose
-      changed_when: "'Creating' in mc_compose.stdout or 'Recreating' in mc_compose.stdout or 'Starting' in mc_compose.stdout"
+      changed_when: >-
+        'Creating' in mc_compose.stdout
+        or 'Recreating' in mc_compose.stdout
+        or 'Starting' in mc_compose.stdout
+
+    - name: 等待服务日志出现 [INFO] Server started.
+      ansible.builtin.command:
+        cmd: docker compose logs --no-log-prefix --tail 200
+        chdir: "{{ mc_root }}"
+      register: mc_logs
+      changed_when: false
+      retries: 20
+      delay: 5
+      until: >
+        'INFO] Server started.' in mc_logs.stdout
+        or 'INFO] Server started.' in mc_logs.stderr
